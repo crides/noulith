@@ -5442,7 +5442,7 @@ pub fn initialize(env: &mut Env) {
             Few::One(t) => match t {
                 Obj::Num(n) => {
                     let now = Utc::now();
-                    let off = FixedOffset::east((to_f64_ok(&n)? * 3600.0) as i32);
+                    let off = FixedOffset::east_opt((to_f64_ok(&n)? * 3600.0) as i32).unwrap();
                     Ok(datetime_to_obj(now + off))
                 }
                 t => Err(NErr::argument_error_1(&t)),
