@@ -2989,14 +2989,13 @@ pub fn initialize(env: &mut Env) {
         name: "subtract".to_string(),
         body: |a, b| a - b,
     });
-    env.insert_builtin(TwoNumsToNumsBuiltin {
-        name: "xor".to_string(),
-        body: |a, b| a ^ b,
-    });
-    env.insert_builtin(TwoNumsToNumsBuiltin {
-        name: "⊕".to_string(),
-        body: |a, b| a ^ b,
-    });
+    env.insert_builtin_with_alias(
+        TwoNumsToNumsBuiltin {
+            name: "xor".to_string(),
+            body: |a, b| a ^ b,
+        },
+        "⊕",
+    );
     env.insert_builtin(Times);
     env.insert_builtin(SeqAndMappedFoldBuiltin {
         name: "sum".to_string(),
@@ -3346,42 +3345,38 @@ pub fn initialize(env: &mut Env) {
     env.insert_builtin(Preposition("with".to_string()));
     env.insert_builtin(Preposition("from".to_string()));
     env.insert_builtin(Preposition("default".to_string()));
-    env.insert_builtin(TwoArgBuiltin {
-        name: "in".to_string(),
-        body: |a, b| Ok(Obj::from(obj_in(a, b)?)),
-    });
-    env.insert_builtin(TwoArgBuiltin {
-        name: "∈".to_string(),
-        body: |a, b| Ok(Obj::from(obj_in(a, b)?)),
-    });
-    env.insert_builtin(TwoArgBuiltin {
-        name: "not_in".to_string(),
-        body: |a, b| Ok(Obj::from(!obj_in(a, b)?)),
-    });
-    env.insert_builtin(TwoArgBuiltin {
-        name: "∉".to_string(),
-        body: |a, b| Ok(Obj::from(!obj_in(a, b)?)),
-    });
-    env.insert_builtin(TwoArgBuiltin {
-        name: "contains".to_string(),
-        body: |a, b| Ok(Obj::from(obj_in(b, a)?)),
-    });
-    env.insert_builtin(TwoArgBuiltin {
-        name: "∋".to_string(),
-        body: |a, b| Ok(Obj::from(obj_in(b, a)?)),
-    });
+    env.insert_builtin_with_alias(
+        TwoArgBuiltin {
+            name: "in".to_string(),
+            body: |a, b| Ok(Obj::from(obj_in(a, b)?)),
+        },
+        "∈",
+    );
+    env.insert_builtin_with_alias(
+        TwoArgBuiltin {
+            name: "not_in".to_string(),
+            body: |a, b| Ok(Obj::from(!obj_in(a, b)?)),
+        },
+        "∉",
+    );
+    env.insert_builtin_with_alias(
+        TwoArgBuiltin {
+            name: "contains".to_string(),
+            body: |a, b| Ok(Obj::from(obj_in(b, a)?)),
+        },
+        "∋",
+    );
     env.insert_builtin(TwoArgBuiltin {
         name: "∌".to_string(),
         body: |a, b| Ok(Obj::from(!obj_in(b, a)?)),
     });
-    env.insert_builtin(EnvTwoArgBuiltin {
-        name: ".".to_string(),
-        body: |env, a, b| call1(env, b, a),
-    });
-    env.insert_builtin(EnvTwoArgBuiltin {
-        name: ".>".to_string(),
-        body: |env, a, b| call1(env, b, a),
-    });
+    env.insert_builtin_with_alias(
+        EnvTwoArgBuiltin {
+            name: ".".to_string(),
+            body: |env, a, b| call1(env, b, a),
+        },
+        ".>",
+    );
     env.insert_builtin(EnvTwoArgBuiltin {
         name: "<.".to_string(),
         body: |env, a, b| call1(env, a, b),
@@ -4353,14 +4348,13 @@ pub fn initialize(env: &mut Env) {
         },
         "+.",
     );
-    env.insert_builtin(TwoArgBuiltin {
-        name: "..".to_string(),
-        body: |a, b| Ok(Obj::list(vec![a, b])),
-    });
-    env.insert_builtin(TwoArgBuiltin {
-        name: "=>".to_string(),
-        body: |a, b| Ok(Obj::list(vec![a, b])),
-    });
+    env.insert_builtin_with_alias(
+        TwoArgBuiltin {
+            name: "..".to_string(),
+            body: |a, b| Ok(Obj::list(vec![a, b])),
+        },
+        "=>",
+    );
     env.insert_builtin(TwoArgBuiltin {
         name: "*.".to_string(),
         body: |a, b| Ok(Obj::list(vec![b; obj_clamp_to_usize_ok(&a)?])),
@@ -4685,70 +4679,48 @@ pub fn initialize(env: &mut Env) {
             (a, b) => Err(NErr::argument_error_2(&a, &b)),
         },
     });
-    env.insert_builtin(TwoArgBuiltin {
-        name: "discard".to_string(),
-        body: |a, b| match (a, b) {
-            (Obj::Seq(Seq::Dict(mut a, d)), b) => {
-                Rc::make_mut(&mut a).remove(&to_key(b)?);
-                Ok(Obj::Seq(Seq::Dict(a, d)))
-            }
-            (a, b) => Err(NErr::argument_error_2(&a, &b)),
-        },
-    });
-    env.insert_builtin(TwoArgBuiltin {
-        name: "-.".to_string(),
-        body: |a, b| match (a, b) {
-            (Obj::Seq(Seq::Dict(mut a, d)), b) => {
-                Rc::make_mut(&mut a).remove(&to_key(b)?);
-                Ok(Obj::Seq(Seq::Dict(a, d)))
-            }
-            (a, b) => Err(NErr::argument_error_2(&a, &b)),
-        },
-    });
-    env.insert_builtin(TwoArgBuiltin {
-        name: "insert".to_string(),
-        body: |a, b| match (a, b) {
-            (Obj::Seq(Seq::Dict(mut a, d)), Obj::Seq(mut s)) => {
-                let mut it = mut_seq_into_iter(&mut s);
-                match (it.next(), it.next(), it.next()) {
-                    (Some(k), Some(v), None) => {
-                        // TODO maybe fail if key exists? have |.. = "upsert"?
-                        Rc::make_mut(&mut a).insert(to_key(k?.clone())?, v?.clone());
-                        Ok(Obj::Seq(Seq::Dict(a, d)))
-                    }
-                    _ => Err(NErr::argument_error("RHS must be pair".to_string())),
+    env.insert_builtin_with_alias(
+        TwoArgBuiltin {
+            name: "discard".to_string(),
+            body: |a, b| match (a, b) {
+                (Obj::Seq(Seq::Dict(mut a, d)), b) => {
+                    Rc::make_mut(&mut a).remove(&to_key(b)?);
+                    Ok(Obj::Seq(Seq::Dict(a, d)))
                 }
-            }
-            (a, b) => Err(NErr::argument_error_2(&a, &b)),
+                (a, b) => Err(NErr::argument_error_2(&a, &b)),
+            },
         },
-    });
-    env.insert_builtin(TwoArgBuiltin {
-        name: "|..".to_string(),
-        body: |a, b| match (a, b) {
-            (Obj::Seq(Seq::List(mut a)), Obj::Seq(mut s)) => {
-                let mut it = mut_seq_into_iter(&mut s);
-                match (it.next(), it.next(), it.next()) {
-                    (Some(k), Some(v), None) => {
-                        let i = pythonic_index(&a, &k?.clone())?;
-                        Rc::make_mut(&mut a)[i] = v?.clone();
-                        Ok(Obj::Seq(Seq::List(a)))
+        "-.",
+    );
+    env.insert_builtin_with_alias(
+        TwoArgBuiltin {
+            name: "insert".to_string(),
+            body: |a, b| match (a, b) {
+                (Obj::Seq(Seq::List(mut a)), Obj::Seq(mut s)) => {
+                    let mut it = mut_seq_into_iter(&mut s);
+                    match (it.next(), it.next(), it.next()) {
+                        (Some(k), Some(v), None) => {
+                            Rc::make_mut(&mut a)[obj_clamp_to_usize_ok(&k?.clone())?] = v?.clone();
+                            Ok(Obj::Seq(Seq::List(a)))
+                        }
+                        _ => Err(NErr::argument_error("RHS must be pair".to_string())),
                     }
-                    _ => Err(NErr::argument_error("RHS must be pair".to_string())),
                 }
-            }
-            (Obj::Seq(Seq::Dict(mut a, d)), Obj::Seq(mut s)) => {
-                let mut it = mut_seq_into_iter(&mut s);
-                match (it.next(), it.next(), it.next()) {
-                    (Some(k), Some(v), None) => {
-                        Rc::make_mut(&mut a).insert(to_key(k?.clone())?, v?.clone());
-                        Ok(Obj::Seq(Seq::Dict(a, d)))
+                (Obj::Seq(Seq::Dict(mut a, d)), Obj::Seq(mut s)) => {
+                    let mut it = mut_seq_into_iter(&mut s);
+                    match (it.next(), it.next(), it.next()) {
+                        (Some(k), Some(v), None) => {
+                            Rc::make_mut(&mut a).insert(to_key(k?.clone())?, v?.clone());
+                            Ok(Obj::Seq(Seq::Dict(a, d)))
+                        }
+                        _ => Err(NErr::argument_error("RHS must be pair".to_string())),
                     }
-                    _ => Err(NErr::argument_error("RHS must be pair".to_string())),
                 }
-            }
-            (a, b) => Err(NErr::argument_error_2(&a, &b)),
+                (a, b) => Err(NErr::argument_error_2(&a, &b)),
+            },
         },
-    });
+        "|..",
+    );
     env.insert_builtin(TwoArgBuiltin {
         name: "&&".to_string(),
         body: |a, b| match (a, b) {
