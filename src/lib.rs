@@ -3834,14 +3834,14 @@ pub fn initialize(env: &mut Env) {
         name: "prefixes".to_string(),
         body: |a| match a {
             Obj::Seq(s) => Ok(Obj::list(multi_prefixes(s)?)),
-            _ => Err(NErr::value_error("not number".to_string())),
+            _ => Err(NErr::value_error("not sequence".to_string())),
         },
     });
     env.insert_builtin(OneArgBuiltin {
         name: "suffixes".to_string(),
         body: |a| match a {
             Obj::Seq(s) => Ok(Obj::list(multi_suffixes(s)?)),
-            _ => Err(NErr::value_error("not number".to_string())),
+            _ => Err(NErr::value_error("not sequence".to_string())),
         },
     });
     env.insert_builtin(OneArgBuiltin {
