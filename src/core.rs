@@ -468,14 +468,16 @@ pub struct Struct {
     pub id: usize,
     pub size: usize,
     pub name: Rc<String>,
+    pub fields: Vec<Rc<String>>,
 }
 
 impl Struct {
-    pub fn new(size: usize, name: Rc<String>) -> Self {
+    pub fn new(name: Rc<String>, fields: Vec<Rc<String>>) -> Self {
         Struct {
             id: STRUCT_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
-            size,
+            size: fields.len(),
             name,
+            fields,
         }
     }
 }
@@ -638,7 +640,7 @@ pub fn call_type1(ty: &ObjType, arg: Obj) -> NRes<Obj> {
             )),
         },
         ObjType::Type => Ok(Obj::Func(Func::Type(type_of(&arg)), Precedence::zero())),
-        ObjType::Struct(_) => call_type(ty, vec![arg]),
+        ObjType::Struct(s) => call_type(ty, vec![arg]),
         // TODO: complex
         _ => Err(NErr::type_error(
             "that type can't be called (maybe not implemented)".to_string(),
@@ -649,9 +651,7 @@ pub fn call_type1(ty: &ObjType, arg: Obj) -> NRes<Obj> {
 pub fn call_type(ty: &ObjType, args: Vec<Obj>) -> NRes<Obj> {
     match ty {
         ObjType::Struct(s) => {
-            if args.len() == 0 {
-                Ok(Obj::Instance(s.clone(), vec![Obj::Null; s.size]))
-            } else if args.len() == s.size {
+            if args.len() == s.size {
                 Ok(Obj::Instance(s.clone(), args))
             } else {
                 Err(NErr::argument_error(format!(
@@ -1841,6 +1841,7 @@ pub enum Expr {
     InternalFor(Box<LocExpr>, Box<LocExpr>),
     InternalCall(usize, Box<LocExpr>),
     InternalLambda(usize, Rc<LocExpr>),
+    Member(Box<LocExpr>, String),
 }
 
 impl Expr {
@@ -2640,7 +2641,6 @@ pub fn freeze(env: &mut FreezeEnv, expr: &LocExpr) -> NRes<LocExpr> {
             Expr::Return(e) => Ok(Expr::Return(opt_box_freeze(env, e)?)),
             Expr::Throw(e) => Ok(Expr::Throw(box_freeze(env, e)?)),
             Expr::Continue => Ok(Expr::Continue),
-
             Expr::InternalFrame(e) => Ok(Expr::InternalFrame(box_freeze(env, e)?)),
             Expr::InternalPush(e) => Ok(Expr::InternalPush(box_freeze(env, e)?)),
             Expr::InternalPop => Ok(Expr::InternalPop),
@@ -2653,6 +2653,10 @@ pub fn freeze(env: &mut FreezeEnv, expr: &LocExpr) -> NRes<LocExpr> {
             Expr::InternalLambda(argc, body) => {
                 Ok(Expr::InternalLambda(*argc, Rc::new(freeze(env, body)?)))
             }
+            Expr::Member(x, field) => Ok(Expr::Member(
+                box_freeze_underscore_ok(env, x)?,
+                field.clone(),
+            )),
         }?,
     })
 }
@@ -3633,6 +3637,28 @@ impl Parser {
                             start,
                             end,
                         };
+                    }
+                }
+                Some(Token::Dot) => {
+                    self.advance();
+                    match self.peek_loc_token() {
+                        Some(LocToken {
+                            token: Token::Ident(s),
+                            end,
+                            ..
+                        }) => {
+                            let end = *end;
+                            let field = s.clone();
+                            self.advance();
+                            cur = LocExpr {
+                                expr: Expr::Member(Box::new(cur), field),
+                                start,
+                                end,
+                            };
+                        }
+                        _ => {
+                            return Err(self.error_here("expected ident".into()));
+                        }
                     }
                 }
                 _ => break Ok(cur),
