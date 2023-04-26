@@ -3719,13 +3719,25 @@ pub fn initialize(env: &mut Env) {
         },
     });
     // TODO: split with limit
-    env.insert_builtin(TwoArgBuiltin {
+    env.insert_builtin(BasicBuiltin {
         name: "split".to_string(),
-        body: |a, b| match (a, b) {
-            (Obj::Seq(Seq::String(s)), Obj::Seq(Seq::String(t))) => Ok(Obj::list(
+        body: |_env, args| match few3(args) {
+            Few3::Two(Obj::Seq(Seq::String(s)), Obj::Seq(Seq::String(t))) => Ok(Obj::list(
                 s.split(&*t).map(|w| Obj::from(w.to_string())).collect(),
             )),
-            (a, b) => Err(NErr::argument_error_2(&a, &b)),
+            Few3::Three(Obj::Seq(Seq::String(s)), Obj::Seq(Seq::String(t)), Obj::Num(n)) => Ok(Obj::list(
+                s.splitn(clamp_to_usize_ok(&n)?, &*t).map(|w| Obj::from(w.to_string())).collect(),
+            )),
+            c => err_add_name(Err(NErr::argument_error_few3(&c)), "split"),
+        },
+    });
+    env.insert_builtin(BasicBuiltin {
+        name: "rsplit".to_string(),
+        body: |_env, args| match few3(args) {
+            Few3::Three(Obj::Seq(Seq::String(s)), Obj::Seq(Seq::String(t)), Obj::Num(n)) => Ok(Obj::list(
+                s.rsplitn(clamp_to_usize_ok(&n)?, &*t).map(|w| Obj::from(w.to_string())).collect(),
+            )),
+            c => err_add_name(Err(NErr::argument_error_few3(&c)), "split"),
         },
     });
     env.insert_builtin(TwoArgBuiltin {
