@@ -3643,8 +3643,23 @@ pub fn initialize(env: &mut Env) {
         body: |mut a| {
             let mut acc = Vec::new();
             for e in mut_obj_into_iter(&mut a, "flatten (outer)")? {
-                for k in mut_obj_into_iter(&mut e?, "flatten (inner)")? {
-                    acc.push(k?);
+                let mut e = e?;
+                match &mut e {
+                    Obj::Seq(ref mut s) => {
+                        match s {
+                            Seq::List(ref mut l) => {
+                                for v in MutObjIntoIter::List(RcVecIter::of(l)) {
+                                    acc.push(v?);
+                                }
+                            }
+                            _ => {
+                                return Err(NErr::type_error(format!("can't flatten {}", type_of(&e).name())));
+                            }
+                        }
+                    }
+                    _ => {
+                        acc.push(e);
+                    }
                 }
             }
             Ok(Obj::list(acc))
