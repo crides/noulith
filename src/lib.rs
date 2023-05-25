@@ -3699,8 +3699,22 @@ pub fn initialize(env: &mut Env) {
                     let mut acc = Vec::new();
                     for e in it {
                         let mut r = b.run1(env, e?)?;
-                        for k in mut_obj_into_iter(&mut r, "flat_map (inner)")? {
-                            acc.push(k?);
+                        match &mut r {
+                            Obj::Seq(ref mut s) => {
+                                match s {
+                                    Seq::List(ref mut l) => {
+                                        for v in MutObjIntoIter::List(RcVecIter::of(l)) {
+                                            acc.push(v?);
+                                        }
+                                    }
+                                    _ => {
+                                        return Err(NErr::type_error(format!("can't flatten {}", type_of(&r).name())));
+                                    }
+                                }
+                            }
+                            _ => {
+                                acc.push(r);
+                            }
                         }
                     }
                     Ok(Obj::list(acc))
