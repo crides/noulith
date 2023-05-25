@@ -5750,6 +5750,17 @@ pub fn initialize(env: &mut Env) {
             _ => Ok(Obj::zero()),
         },
     });
+
+    env.insert_builtin(OneArgBuiltin {
+        name: "env_var".to_string(),
+        body: |a| match a {
+            Obj::Seq(Seq::String(s)) => Ok(Obj::Seq(Seq::String(
+                Rc::new(std::env::var(s.as_str()).map_err(|e| NErr::io_error(format!("can't get environment variable: {:?}", e)))?)
+            ))),
+            a => Err(NErr::argument_error_1(&a)),
+        },
+    });
+
 }
 
 // #[cfg_attr(target_arch = "wasm32")]
