@@ -531,6 +531,32 @@ impl ObjType {
     }
 }
 
+impl PartialEq for ObjType {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (ObjType::Null, ObjType::Null)
+            | (ObjType::Int, ObjType::Int)
+            | (ObjType::Rational, ObjType::Rational)
+            | (ObjType::Float, ObjType::Float)
+            | (ObjType::Complex, ObjType::Complex)
+            | (ObjType::Number, ObjType::Number)
+            | (ObjType::String, ObjType::String)
+            | (ObjType::List, ObjType::List)
+            | (ObjType::Dict, ObjType::Dict)
+            | (ObjType::Vector, ObjType::Vector)
+            | (ObjType::Bytes, ObjType::Bytes)
+            | (ObjType::Stream, ObjType::Stream)
+            | (ObjType::Type, ObjType::Type)
+            | (ObjType::Func, ObjType::Func)
+            | (ObjType::Any, ObjType::Any) => true,
+            (ObjType::StructInstance, ObjType::StructInstance) => false,
+            (ObjType::Struct(s1), ObjType::Struct(s2)) => s1 == s2,
+            (ObjType::Satisfying(..), ObjType::Satisfying(..)) => false,
+            _ => false,
+        }
+    }
+}
+
 pub fn type_of(obj: &Obj) -> ObjType {
     match obj {
         Obj::Null => ObjType::Null,
@@ -1030,6 +1056,7 @@ impl PartialEq for Obj {
             (Obj::Null, Obj::Null) => true,
             (Obj::Num(a), Obj::Num(b)) => a == b,
             (Obj::Seq(a), Obj::Seq(b)) => a == b,
+            (Obj::Func(Func::Type(a), _), Obj::Func(Func::Type(b), _)) => a == b,
             _ => false,
         }
     }
