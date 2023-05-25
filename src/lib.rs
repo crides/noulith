@@ -2972,6 +2972,10 @@ pub fn initialize(env: &mut Env) {
         name: "not".to_string(),
         body: |arg| Ok(Obj::from(!arg.truthy())),
     });
+    env.insert_builtin(OneArgBuiltin {
+        name: "bool".to_string(),
+        body: |arg| Ok(Obj::from(!!arg.truthy())),
+    });
 
     env.insert_builtin(Plus);
     env.insert_builtin(Minus);
