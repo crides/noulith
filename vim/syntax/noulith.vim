@@ -31,4 +31,6 @@ syn region noulithMultilineNest start="\(..\)\@<=(" end=")" contained contains=n
 hi def link noulithMultilineComment Comment
 hi def link noulithMultilineNest Comment
 
+set commentstring=#%s
+
 let b:current_syntax = 'noulith'
