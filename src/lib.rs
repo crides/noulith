@@ -10,8 +10,6 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Debug;
 
-use regex::Regex;
-
 use num::bigint::{BigInt, RandBigInt};
 
 use chrono::prelude::*;
@@ -1308,8 +1306,8 @@ impl Builtin for Merge {
     }
 }
 
-fn captures_to_obj(regex: &Regex, captures: &regex::Captures<'_>) -> Obj {
-    if regex.capture_locations().len() == 1 {
+fn captures_to_obj(r: &fancy_regex::Regex, captures: &fancy_regex::Captures<'_>) -> Obj {
+    if r.capture_names().filter(|c| c.is_none()).count() == 1 {
         Obj::from(captures.get(0).unwrap().as_str())
     } else {
         Obj::list(
@@ -1347,7 +1345,7 @@ impl Builtin for Replace {
                 Obj::Seq(Seq::String(c)),
             ) => {
                 // rust's replacement syntax is $n or ${n} for nth group
-                let r = Regex::new(&b)
+                let r = fancy_regex::Regex::new(&b)
                     .map_err(|e| NErr::value_error(format!("replace: invalid regex: {}", e)))?;
                 Ok(Obj::from(r.replace_all(&a, &*c).into_owned()))
             }
@@ -1356,11 +1354,11 @@ impl Builtin for Replace {
                 Obj::Seq(Seq::String(b)),
                 Obj::Func(f, _prec),
             ) => {
-                let r = Regex::new(&b)
+                let r = fancy_regex::Regex::new(&b)
                     .map_err(|e| NErr::value_error(format!("replace: invalid regex: {}", e)))?;
                 let mut status = Ok(());
                 let res = Obj::from(
-                    r.replace_all(&a, |caps: &regex::Captures<'_>| {
+                    r.replace_all(&a, |caps: &fancy_regex::Captures<'_>| {
                         if status.is_err() {
                             return String::new();
                         }
@@ -1633,7 +1631,7 @@ impl Builtin for SplitRe {
         match few3(args) {
             Few3::One(t) => Ok(clone_and_part_app_2(self, t)),
             Few3::Two(Obj::Seq(Seq::String(s)), Obj::Seq(Seq::String(t))) => Ok(Obj::list(
-                Regex::new(t.as_str())
+                regex::Regex::new(t.as_str())
                     .map_err(|e| NErr::value_error(format!("regex error: {}", e)))?
                     .split(s.as_str())
                     .map(|w| Obj::from(w.to_string()))
@@ -1641,7 +1639,7 @@ impl Builtin for SplitRe {
             )),
             Few3::Three(Obj::Seq(Seq::String(s)), Obj::Seq(Seq::String(t)), Obj::Num(n)) => {
                 Ok(Obj::list(
-                    Regex::new(t.as_str())
+                    regex::Regex::new(t.as_str())
                         .map_err(|e| NErr::value_error(format!("regex error: {}", e)))?
                         .splitn(s.as_str(), clamp_to_usize_ok(&n)?)
                         .map(|w| Obj::from(w.to_string()))
@@ -2947,9 +2945,11 @@ fn read_input(env: &Rc<RefCell<Env>>) -> NRes<Obj> {
 fn string_match(a: &Obj, b: &Obj) -> NRes<bool> {
     match (a, b) {
         (Obj::Seq(Seq::String(a)), Obj::Seq(Seq::String(b))) => {
-            let r =
-                Regex::new(&b).map_err(|e| NErr::value_error(format!("invalid regex: {}", e)))?;
-            Ok(r.find(&a).is_some())
+            let r = fancy_regex::Regex::new(&b)
+                .map_err(|e| NErr::value_error(format!("invalid regex: {}", e)))?;
+            Ok(r.find(&a)
+                .map_err(|e| NErr::value_error(format!("error when matching: {}", e)))?
+                .is_some())
         }
         (a, b) => Err(NErr::argument_error_2(&a, &b)),
     }
@@ -3649,18 +3649,19 @@ pub fn initialize(env: &mut Env) {
             for e in mut_obj_into_iter(&mut a, "flatten (outer)")? {
                 let mut e = e?;
                 match &mut e {
-                    Obj::Seq(ref mut s) => {
-                        match s {
-                            Seq::List(ref mut l) => {
-                                for v in MutObjIntoIter::List(RcVecIter::of(l)) {
-                                    acc.push(v?);
-                                }
-                            }
-                            _ => {
-                                return Err(NErr::type_error(format!("can't flatten {}", type_of(&e).name())));
+                    Obj::Seq(ref mut s) => match s {
+                        Seq::List(ref mut l) => {
+                            for v in MutObjIntoIter::List(RcVecIter::of(l)) {
+                                acc.push(v?);
                             }
                         }
-                    }
+                        _ => {
+                            return Err(NErr::type_error(format!(
+                                "can't flatten {}",
+                                type_of(&e).name()
+                            )));
+                        }
+                    },
                     _ => {
                         acc.push(e);
                     }
@@ -3700,18 +3701,19 @@ pub fn initialize(env: &mut Env) {
                     for e in it {
                         let mut r = b.run1(env, e?)?;
                         match &mut r {
-                            Obj::Seq(ref mut s) => {
-                                match s {
-                                    Seq::List(ref mut l) => {
-                                        for v in MutObjIntoIter::List(RcVecIter::of(l)) {
-                                            acc.push(v?);
-                                        }
-                                    }
-                                    _ => {
-                                        return Err(NErr::type_error(format!("can't flatten {}", type_of(&r).name())));
+                            Obj::Seq(ref mut s) => match s {
+                                Seq::List(ref mut l) => {
+                                    for v in MutObjIntoIter::List(RcVecIter::of(l)) {
+                                        acc.push(v?);
                                     }
                                 }
-                            }
+                                _ => {
+                                    return Err(NErr::type_error(format!(
+                                        "can't flatten {}",
+                                        type_of(&r).name()
+                                    )));
+                                }
+                            },
                             _ => {
                                 acc.push(r);
                             }
@@ -4248,15 +4250,21 @@ pub fn initialize(env: &mut Env) {
         name: "search".to_string(),
         body: |a, b| match (a, b) {
             (Obj::Seq(Seq::String(a)), Obj::Seq(Seq::String(b))) => {
-                let r = Regex::new(&b)
+                let r = fancy_regex::Regex::new(&b)
                     .map_err(|e| NErr::value_error(format!("invalid regex: {}", e)))?;
-                if r.capture_locations().len() == 1 {
-                    match r.find(&a) {
+                if r.capture_names().filter(|c| c.is_none()).count() == 1 {
+                    match r
+                        .find(&a)
+                        .map_err(|e| NErr::value_error(format!("can't search with regex: {}", e)))?
+                    {
                         None => Ok(Obj::Null),
                         Some(c) => Ok(Obj::from(c.as_str())),
                     }
                 } else {
-                    match r.captures(&a) {
+                    match r
+                        .captures(&a)
+                        .map_err(|e| NErr::value_error(format!("can't search with regex: {}", e)))?
+                    {
                         None => Ok(Obj::Null),
                         Some(c) => Ok(captures_to_obj(&r, &c)),
                     }
@@ -4269,26 +4277,29 @@ pub fn initialize(env: &mut Env) {
         name: "search_all".to_string(),
         body: |a, b| match (a, b) {
             (Obj::Seq(Seq::String(a)), Obj::Seq(Seq::String(b))) => {
-                let r = Regex::new(&b)
+                let r = fancy_regex::Regex::new(&b)
                     .map_err(|e| NErr::value_error(format!("invalid regex: {}", e)))?;
-                if r.capture_locations().len() == 1 {
+                if r.capture_names().filter(|c| c.is_none()).count() == 1 {
                     Ok(Obj::list(
-                        r.find_iter(&a).map(|c| Obj::from(c.as_str())).collect(),
+                        r.find_iter(&a)
+                            .map(|c| {
+                                c.map_err(|e| {
+                                    NErr::value_error(format!("can't search with regex: {}", e))
+                                })
+                                .map(|c| Obj::from(c.as_str()))
+                            })
+                            .collect::<Result<_, _>>()?,
                     ))
                 } else {
                     Ok(Obj::list(
                         r.captures_iter(&a)
                             .map(|c| {
-                                Obj::list(
-                                    c.iter()
-                                        .map(|cap| match cap {
-                                            None => Obj::Null, // didn't participate
-                                            Some(s) => Obj::from(s.as_str()),
-                                        })
-                                        .collect(),
-                                )
+                                c.map_err(|e| {
+                                    NErr::value_error(format!("can't search with regex: {}", e))
+                                })
+                                .map(|c| captures_to_obj(&r, &c))
                             })
-                            .collect(),
+                            .collect::<Result<_, _>>()?,
                     ))
                 }
             }
@@ -5772,13 +5783,14 @@ pub fn initialize(env: &mut Env) {
     env.insert_builtin(OneArgBuiltin {
         name: "env_var".to_string(),
         body: |a| match a {
-            Obj::Seq(Seq::String(s)) => Ok(Obj::Seq(Seq::String(
-                Rc::new(std::env::var(s.as_str()).map_err(|e| NErr::io_error(format!("can't get environment variable: {:?}", e)))?)
-            ))),
+            Obj::Seq(Seq::String(s)) => Ok(Obj::Seq(Seq::String(Rc::new(
+                std::env::var(s.as_str()).map_err(|e| {
+                    NErr::io_error(format!("can't get environment variable: {:?}", e))
+                })?,
+            )))),
             a => Err(NErr::argument_error_1(&a)),
         },
     });
-
 }
 
 // #[cfg_attr(target_arch = "wasm32")]
