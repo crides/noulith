@@ -1665,6 +1665,184 @@ impl Builtin for SplitRe {
     }
 }
 
+#[derive(Debug, Clone)]
+struct Proc;
+
+impl Proc {
+    fn output(res: std::process::Output) -> NRes<Obj> {
+        if res.status.success() {
+            String::from_utf8(res.stdout)
+                .map_err(|e| NErr::io_error(format!("child output not in UTF-8: {}", e)))
+                .map(|r| Obj::Seq(Seq::String(Rc::new(r))))
+        } else {
+            Err(NErr::io_error(format!(
+                "child exited with nonzero status: {}",
+                res.status
+            )))
+        }
+    }
+}
+
+impl Builtin for Proc {
+    fn run(&self, _env: &REnv, args: Vec<Obj>) -> NRes<Obj> {
+        match few3(args) {
+            Few3::One(Obj::Seq(Seq::String(s))) => match std::process::Command::new(&*s).output() {
+                Ok(res) => Proc::output(res),
+                Err(e) => Err(NErr::io_error(e.to_string())),
+            },
+            Few3::Two(Obj::Seq(Seq::String(s)), Obj::Seq(mut args)) => {
+                match std::process::Command::new(&*s)
+                    .args(
+                        mut_seq_into_iter(&mut args)
+                            .map(|s| Ok(s?.to_string()))
+                            .collect::<NRes<Vec<String>>>()?,
+                    )
+                    .output()
+                {
+                    Ok(res) => Proc::output(res),
+                    Err(e) => Err(NErr::io_error(format!("{}", e))),
+                }
+            }
+            Few3::Three(Obj::Seq(Seq::String(s)), Obj::Seq(mut args), Obj::Seq(Seq::String(a))) => {
+                match std::process::Command::new(&*s)
+                    .args(
+                        mut_seq_into_iter(&mut args)
+                            .map(|s| Ok(format!("{}", s?)))
+                            .collect::<NRes<Vec<String>>>()?,
+                    )
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .spawn()
+                {
+                    Ok(mut child) => {
+                        let mut stdin = child
+                            .stdin
+                            .take()
+                            .ok_or(NErr::io_error(format!("Failed to open child stdin")))?;
+                        let ac = (*a).clone();
+                        let writer = std::thread::spawn(move || {
+                            stdin
+                                .write_all(ac.as_bytes())
+                                .expect("couldn't write to stdin")
+                        });
+
+                        let res = child
+                            .wait_with_output()
+                            .map_err(|e| NErr::io_error(format!("{}", e)))?;
+                        writer.join().map_err(|_| {
+                            NErr::io_error(format!("Failed to join child stdin writer"))
+                        })?;
+                        Proc::output(res)
+                    }
+                    Err(e) => Err(NErr::io_error(format!("{}", e))),
+                }
+            }
+            c => err_add_name(Err(NErr::argument_error_few3(&c)), "run_process"),
+        }
+    }
+
+    fn builtin_name(&self) -> &str {
+        "proc"
+    }
+
+    fn try_chain(&self, other: &Func) -> Option<Func> {
+        match other {
+            Func::Builtin(b) => match b.builtin_name() {
+                "with" => Some(Func::Builtin(Rc::new(self.clone()))),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ProcBytes;
+
+impl ProcBytes {
+    fn output(res: std::process::Output) -> NRes<Obj> {
+        if res.status.success() {
+            Ok(Obj::Seq(Seq::Bytes(Rc::new(res.stdout))))
+        } else {
+            Err(NErr::io_error(format!(
+                "child exited with nonzero status: {}",
+                res.status
+            )))
+        }
+    }
+}
+
+impl Builtin for ProcBytes {
+    fn run(&self, _env: &REnv, args: Vec<Obj>) -> NRes<Obj> {
+        match few3(args) {
+            Few3::One(Obj::Seq(Seq::String(s))) => match std::process::Command::new(&*s).output() {
+                Ok(res) => ProcBytes::output(res),
+                Err(e) => Err(NErr::io_error(e.to_string())),
+            },
+            Few3::Two(Obj::Seq(Seq::String(s)), Obj::Seq(mut args)) => {
+                match std::process::Command::new(&*s)
+                    .args(
+                        mut_seq_into_iter(&mut args)
+                            .map(|s| Ok(s?.to_string()))
+                            .collect::<NRes<Vec<String>>>()?,
+                    )
+                    .output()
+                {
+                    Ok(res) => ProcBytes::output(res),
+                    Err(e) => Err(NErr::io_error(e.to_string())),
+                }
+            }
+            Few3::Three(Obj::Seq(Seq::String(s)), Obj::Seq(mut args), Obj::Seq(Seq::Bytes(b))) => {
+                match std::process::Command::new(&*s)
+                    .args(
+                        mut_seq_into_iter(&mut args)
+                            .map(|s| Ok(s?.to_string()))
+                            .collect::<NRes<Vec<String>>>()?,
+                    )
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .spawn()
+                {
+                    Ok(mut child) => {
+                        let mut stdin = child
+                            .stdin
+                            .take()
+                            .ok_or(NErr::io_error(format!("Failed to open child stdin")))?;
+                        let bc: Vec<u8> = (*b).clone();
+                        let writer = std::thread::spawn(move || {
+                            stdin.write_all(&bc).expect("couldn't write to stdin")
+                        });
+
+                        let res = child
+                            .wait_with_output()
+                            .map_err(|e| NErr::io_error(e.to_string()))?;
+                        writer.join().map_err(|_| {
+                            NErr::io_error("Failed to join child stdin writer".into())
+                        })?;
+                        ProcBytes::output(res)
+                    }
+                    Err(e) => Err(NErr::io_error(e.to_string())),
+                }
+            }
+            c => err_add_name(Err(NErr::argument_error_few3(&c)), "run_process"),
+        }
+    }
+
+    fn builtin_name(&self) -> &str {
+        "proc_bytes"
+    }
+
+    fn try_chain(&self, other: &Func) -> Option<Func> {
+        match other {
+            Func::Builtin(b) => match b.builtin_name() {
+                "with" => Some(Func::Builtin(Rc::new(self.clone()))),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct BasicBuiltin {
     name: String,
@@ -4631,6 +4809,8 @@ pub fn initialize(env: &mut Env) {
     env.insert_builtin(Split);
     env.insert_builtin(RSplit);
     env.insert_builtin(SplitRe);
+    env.insert_builtin(Proc);
+    env.insert_builtin(ProcBytes);
     env.insert_builtin(EnvTwoArgBuiltin {
         name: "sort_on".to_string(),
         body: |env, a, b| match (a, b) {
@@ -5334,73 +5514,6 @@ pub fn initialize(env: &mut Env) {
                 }
             }
             (a, b) => Err(NErr::argument_error_2(&a, &b)),
-        },
-    });
-    env.insert_builtin(BasicBuiltin {
-        name: "run_process".to_string(),
-        body: |_env, args| match few3(args) {
-            Few3::Two(Obj::Seq(Seq::String(s)), Obj::Seq(mut args)) => {
-                match std::process::Command::new(&*s)
-                    .args(
-                        mut_seq_into_iter(&mut args)
-                            .map(|s| Ok(format!("{}", s?)))
-                            .collect::<NRes<Vec<String>>>()?,
-                    )
-                    .output()
-                {
-                    Ok(res) => {
-                        if res.status.success() {
-                            Ok(Obj::Seq(Seq::Bytes(Rc::new(res.stdout))))
-                        } else {
-                            Err(NErr::io_error(format!(
-                                "subprocess exited with nonzero status {}",
-                                res.status
-                            )))
-                        }
-                    }
-                    Err(e) => Err(NErr::io_error(format!("{}", e))),
-                }
-            }
-            Few3::Three(Obj::Seq(Seq::String(s)), Obj::Seq(mut args), Obj::Seq(Seq::Bytes(b))) => {
-                match std::process::Command::new(&*s)
-                    .args(
-                        mut_seq_into_iter(&mut args)
-                            .map(|s| Ok(format!("{}", s?)))
-                            .collect::<NRes<Vec<String>>>()?,
-                    )
-                    .stdin(std::process::Stdio::piped())
-                    .stdout(std::process::Stdio::piped())
-                    .spawn()
-                {
-                    Ok(mut child) => {
-                        let mut stdin = child
-                            .stdin
-                            .take()
-                            .ok_or(NErr::io_error(format!("Failed to open child stdin")))?;
-                        let bc: Vec<u8> = (*b).clone();
-                        let writer = std::thread::spawn(move || {
-                            stdin.write_all(&bc).expect("couldn't write to stdin")
-                        });
-
-                        let res = child
-                            .wait_with_output()
-                            .map_err(|e| NErr::io_error(format!("{}", e)))?;
-                        writer.join().map_err(|_| {
-                            NErr::io_error(format!("Failed to join child stdin writer"))
-                        })?;
-                        if res.status.success() {
-                            Ok(Obj::Seq(Seq::Bytes(Rc::new(res.stdout))))
-                        } else {
-                            Err(NErr::io_error(format!(
-                                "subprocess exited with nonzero status {}",
-                                res.status
-                            )))
-                        }
-                    }
-                    Err(e) => Err(NErr::io_error(format!("{}", e))),
-                }
-            }
-            c => err_add_name(Err(NErr::argument_error_few3(&c)), "run_process"),
         },
     });
     env.insert_builtin(OneArgBuiltin {
